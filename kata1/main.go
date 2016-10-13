@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
+	"net/http"
+	"io/ioutil"
 )
 
 type Product struct {
@@ -18,72 +20,64 @@ type Stock struct {
 }
 
 func randomSleep() {
-    time.Sleep(time.Duration(rand.Int31n(1000)) * time.Millisecond)
+	time.Sleep(time.Duration(rand.Int31n(1000)) * time.Millisecond)
 }
 
 type Parser struct {
-    xmlData []byte
-    close chan Parser
-    pos int
-    res []byte
+	xmlData []byte
+	close   chan Parser
+	pos     int
+	res     []byte
 }
 
 func (p Parser) parse() {
-
-    fmt.Println(p.pos)
-	
-    randomSleep()
-
+	randomSleep()
 	stock := Stock{}
 
 	err := xml.Unmarshal(p.xmlData, &stock)
-
 	if err != nil {
-        return
+		return
 	}
 
 	randomSleep()
 
-	fmt.Println(stock.ProductList[0].Sku)
-	fmt.Println(stock)
-
 	res, err := json.Marshal(stock)
-
-    if err != nil {
-        return
-    }
+	if err != nil {
+		return
+	}
 
 	randomSleep()
-
-    p.res = res
-
-    p.close <- p
+	p.res = res
+	p.close <- p
 }
 
 func main() {
 
-	xmlData := []byte(`<?xml version="1.0" encoding="UTF-8" ?>
-<ProductList>
-    <Product>
-        <sku>ABC123</sku>
-        <quantity>2</quantity>
-    </Product>
-    <Product>
-        <sku>ABC124</sku>
-        <quantity>20</quantity>
-    </Product>
-</ProductList>`)
+	res, err := http.Get("http://127.0.0.1:8080/ping")
+	if err != nil {
+		panic(err)
+	}
 
-    var parser Parser
-    done := make(chan Parser, 10)
+	if (res.StatusCode != 200){
+		panic(fmt.Sprintf("Error. StatusCode: %d", res.StatusCode))
+	}
 
-    for i:=0; i<10; i++ {
-        parser = Parser{xmlData, done, i, []byte{}}
-        go parser.parse()
-    }
+	xmlData, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		panic(err)
+	}
 
-	var p = <- done
+	var parser Parser
+	done := make(chan Parser, 10)
 
-    fmt.Println("Winner: ", p.pos)
-    fmt.Println(string(p.res))
+	for i := 0; i < 10; i++ {
+		parser = Parser{xmlData, done, i, []byte{}}
+		go parser.parse()
+	}
+
+	var p = <-done
+
+	fmt.Println("Winner thread:", p.pos)
+	fmt.Println(string(p.res))
 }
